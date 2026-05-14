@@ -1,10 +1,5 @@
 from fastapi import FastAPI, UploadFile, File
 import requests
-import os
-
-from dotenv import load_dotenv
-
-load_dotenv()
 
 app = FastAPI()
 
@@ -63,17 +58,45 @@ async def scan_invoice(
             "ParsedResults"
         ][0]["ParsedText"]
 
-        lines = parsed_text.split("\n")
+        lines = [
+            line.strip()
+            for line in parsed_text.split("\n")
+            if line.strip()
+        ]
 
         store_name = (
-            lines[0]
-            if len(lines) > 0
+            lines[1]
+            if len(lines) > 1
             else "Unknown Store"
         )
+
+        total_amount = "Not Found"
+
+        for line in lines:
+
+            if "$" in line:
+
+                total_amount = line
+                break
+
+        invoice_date = "Not Found"
+
+        for line in lines:
+
+            if "/" in line:
+
+                invoice_date = line
+                break
 
         return {
             "store_name":
             store_name,
+
+            "invoice_date":
+            invoice_date,
+
+            "total_amount":
+            total_amount,
 
             "raw_text":
             parsed_text
