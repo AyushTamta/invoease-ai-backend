@@ -100,6 +100,18 @@ async def scan_invoice(
 
         data = response.json()
 
+        print(data)
+
+        if "candidates" not in data:
+
+            return {
+                "error":
+                "Gemini API failed",
+
+                "full_response":
+                data
+            }
+
         text_response = data[
             "candidates"
         ][0]["content"]["parts"][0][
