@@ -32,71 +32,73 @@ async def scan_invoice(
     file: UploadFile = File(...)
 ):
 
-    image_bytes = await file.read()
-
-    base64_image = base64.b64encode(
-        image_bytes
-    ).decode("utf-8")
-
-    prompt = """
-    You are an intelligent invoice parser.
-
-    Analyze the uploaded receipt or invoice image carefully.
-
-    Extract:
-    - store_name
-    - total_amount
-    - invoice_date
-    - category
-    - purchased_items
-
-    Return ONLY valid JSON.
-
-    Example:
-
-    {
-      "store_name": "Starbucks",
-      "total_amount": "12.50",
-      "invoice_date": "2026-05-13",
-      "category": "Food & Beverage",
-      "purchased_items": [
-        "Latte",
-        "Blueberry Muffin"
-      ]
-    }
-    """
-
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
-
-    payload = {
-        "contents": [
-            {
-                "parts": [
-                    {
-                        "text": prompt
-                    },
-                    {
-                        "inline_data": {
-                            "mime_type":
-                            file.content_type,
-
-                            "data":
-                            base64_image
-                        }
-                    }
-                ]
-            }
-        ]
-    }
-
-    response = requests.post(
-        url,
-        json=payload
-    )
-
-    data = response.json()
-
     try:
+
+        image_bytes = await file.read()
+
+        base64_image = (
+            base64.b64encode(
+                image_bytes
+            ).decode("utf-8")
+        )
+
+        prompt = """
+        You are an intelligent invoice parser.
+
+        Analyze this invoice or receipt image carefully.
+
+        Extract:
+        - store_name
+        - total_amount
+        - invoice_date
+        - category
+        - purchased_items
+
+        Return ONLY valid JSON.
+
+        Example:
+
+        {
+          "store_name": "Starbucks",
+          "total_amount": "12.50",
+          "invoice_date": "2026-05-13",
+          "category": "Food & Beverage",
+          "purchased_items": [
+            "Latte",
+            "Blueberry Muffin"
+          ]
+        }
+        """
+
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
+
+        payload = {
+            "contents": [
+                {
+                    "parts": [
+                        {
+                            "text": prompt
+                        },
+                        {
+                            "inline_data": {
+                                "mime_type":
+                                file.content_type,
+
+                                "data":
+                                base64_image
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+
+        response = requests.post(
+            url,
+            json=payload
+        )
+
+        data = response.json()
 
         text_response = data[
             "candidates"
@@ -123,7 +125,5 @@ async def scan_invoice(
             "error":
             "Could not parse invoice",
 
-            "details": str(e),
-
-            "raw_response": data
+            "details": str(e)
         }
