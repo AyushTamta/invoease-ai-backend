@@ -1,9 +1,4 @@
-from fastapi import (
-    FastAPI,
-    UploadFile,
-    File
-)
-
+from fastapi import FastAPI, UploadFile, File
 import os
 import requests
 import base64
@@ -43,34 +38,21 @@ async def scan_invoice(
         )
 
         prompt = """
-        You are an intelligent invoice parser.
-
-        Analyze this invoice or receipt image carefully.
-
-        Extract:
-        - store_name
-        - total_amount
-        - invoice_date
-        - category
-        - purchased_items
+        Analyze this invoice.
 
         Return ONLY valid JSON.
 
-        Example:
-
         {
-          "store_name": "Starbucks",
-          "total_amount": "12.50",
-          "invoice_date": "2026-05-13",
-          "category": "Food & Beverage",
-          "purchased_items": [
-            "Latte",
-            "Blueberry Muffin"
-          ]
+          "store_name": "",
+          "total_amount": "",
+          "invoice_date": "",
+          "category": "",
+          "purchased_items": []
         }
         """
 
-url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key={GEMINI_API_KEY}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key={GEMINI_API_KEY}"
+
         payload = {
             "contents": [
                 {
@@ -99,8 +81,6 @@ url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash
 
         data = response.json()
 
-        print(data)
-
         if "candidates" not in data:
 
             return {
@@ -113,9 +93,7 @@ url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash
 
         text_response = data[
             "candidates"
-        ][0]["content"]["parts"][0][
-            "text"
-        ]
+        ][0]["content"]["parts"][0]["text"]
 
         cleaned = (
             text_response
@@ -136,5 +114,6 @@ url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash
             "error":
             "Could not parse invoice",
 
-            "details": str(e)
+            "details":
+            str(e)
         }
