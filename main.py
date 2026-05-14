@@ -1,7 +1,6 @@
 from fastapi import FastAPI, UploadFile, File
-import os
 import requests
-import base64
+import os
 import json
 
 from dotenv import load_dotenv
@@ -10,8 +9,8 @@ load_dotenv()
 
 app = FastAPI()
 
-GEMINI_API_KEY = os.getenv(
-    "GEMINI_API_KEY"
+OCR_API_KEY = os.getenv(
+    "OCR_API_KEY"
 )
 
 @app.get("/")
@@ -19,17 +18,8 @@ def home():
 
     return {
         "message":
-        "InvoEase AI Backend Running"
+        "InvoEase OCR Backend Running"
     }
-
-@app.get("/models")
-def list_models():
-
-    url = f"https://generativelanguage.googleapis.com/v1beta/models?key={GEMINI_API_KEY}"
-
-    response = requests.get(url)
-
-    return response.json()
 
 @app.post("/scan-invoice")
 async def scan_invoice(
@@ -40,102 +30,51 @@ async def scan_invoice(
 
         image_bytes = await file.read()
 
-        base64_image = (
-            base64.b64encode(
-                image_bytes
-            ).decode("utf-8")
-        )
-
-        prompt = """
-        Analyze this invoice or receipt carefully.
-
-        Extract:
-        - store_name
-        - total_amount
-        - invoice_date
-        - category
-        - purchased_items
-
-        Return ONLY valid JSON.
-
-        Example:
-
-        {
-          "store_name": "Starbucks",
-          "total_amount": "12.50",
-          "invoice_date": "2026-05-13",
-          "category": "Food & Beverage",
-          "purchased_items": [
-            "Latte",
-            "Blueberry Muffin"
-          ]
-        }
-        """
-
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
-
-        payload = {
-            "contents": [
-                {
-                    "parts": [
-                        {
-                            "text": prompt
-                        },
-                        {
-                            "inline_data": {
-                                "mime_type":
-                                file.content_type,
-
-                                "data":
-                                base64_image
-                            }
-                        }
-                    ]
-                }
-            ]
-        }
-
         response = requests.post(
-            url,
-            json=payload
-        )
+            "https://api.ocr.space/parse/image",
+            files={
+                "filename": (
+                    file.filename,
+                    image_bytes,
+                    file.content_type
+                )
+            },
+            data={
+                "apikey":
+                OCR_API_KEY,
 
-        data = response.json()
-
-        print(data)
-
-        if "candidates" not in data:
-
-            return {
-                "error":
-                "Gemini API failed",
-
-                "full_response":
-                data
+                "language":
+                "eng"
             }
-
-        text_response = data[
-            "candidates"
-        ][0]["content"]["parts"][0]["text"]
-
-        cleaned = (
-            text_response
-            .replace("```json", "")
-            .replace("```", "")
-            .strip()
         )
 
-        parsed_json = json.loads(
-            cleaned
+        result = response.json()
+
+        parsed_text = result[
+            "ParsedResults"
+        ][0]["ParsedText"]
+
+        lines = parsed_text.split("\n")
+
+        store_name = (
+            lines[0]
+            if len(lines) > 0
+            else "Unknown Store"
         )
 
-        return parsed_json
+        return {
+            "store_name":
+            store_name,
+
+            "raw_text":
+            parsed_text
+        }
 
     except Exception as e:
 
         return {
             "error":
-            "Could not parse invoice",
+            "OCR parsing failed",
 
             "details":
             str(e)
