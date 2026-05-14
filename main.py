@@ -47,20 +47,32 @@ async def scan_invoice(
         )
 
         prompt = """
-        Analyze this invoice.
+        Analyze this invoice or receipt carefully.
+
+        Extract:
+        - store_name
+        - total_amount
+        - invoice_date
+        - category
+        - purchased_items
 
         Return ONLY valid JSON.
 
+        Example:
+
         {
-          "store_name": "",
-          "total_amount": "",
-          "invoice_date": "",
-          "category": "",
-          "purchased_items": []
+          "store_name": "Starbucks",
+          "total_amount": "12.50",
+          "invoice_date": "2026-05-13",
+          "category": "Food & Beverage",
+          "purchased_items": [
+            "Latte",
+            "Blueberry Muffin"
+          ]
         }
         """
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro-vision:generateContent?key={GEMINI_API_KEY}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
 
         payload = {
             "contents": [
@@ -89,6 +101,8 @@ async def scan_invoice(
         )
 
         data = response.json()
+
+        print(data)
 
         if "candidates" not in data:
 
