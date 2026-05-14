@@ -8,7 +8,7 @@ load_dotenv()
 
 app = FastAPI()
 
-OCR_API_KEY = "PASTE_REAL_KEY_HERE"
+OCR_API_KEY = "K82584264988957"
 
 @app.get("/")
 def home():
