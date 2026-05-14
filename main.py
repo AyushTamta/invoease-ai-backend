@@ -7,6 +7,7 @@ from fastapi import (
 import os
 import requests
 import base64
+import json
 
 from dotenv import load_dotenv
 
@@ -38,16 +39,31 @@ async def scan_invoice(
     ).decode("utf-8")
 
     prompt = """
-    Analyze this invoice or receipt.
+    You are an intelligent invoice parser.
+
+    Analyze the uploaded receipt or invoice image carefully.
 
     Extract:
     - store_name
     - total_amount
     - invoice_date
     - category
-    - items
+    - purchased_items
 
     Return ONLY valid JSON.
+
+    Example:
+
+    {
+      "store_name": "Starbucks",
+      "total_amount": "12.50",
+      "invoice_date": "2026-05-13",
+      "category": "Food & Beverage",
+      "purchased_items": [
+        "Latte",
+        "Blueberry Muffin"
+      ]
+    }
     """
 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
@@ -62,7 +78,7 @@ async def scan_invoice(
                     {
                         "inline_data": {
                             "mime_type":
-                            "image/jpeg",
+                            file.content_type,
 
                             "data":
                             base64_image
@@ -78,4 +94,36 @@ async def scan_invoice(
         json=payload
     )
 
-    return response.json()
+    data = response.json()
+
+    try:
+
+        text_response = data[
+            "candidates"
+        ][0]["content"]["parts"][0][
+            "text"
+        ]
+
+        cleaned = (
+            text_response
+            .replace("```json", "")
+            .replace("```", "")
+            .strip()
+        )
+
+        parsed_json = json.loads(
+            cleaned
+        )
+
+        return parsed_json
+
+    except Exception as e:
+
+        return {
+            "error":
+            "Could not parse invoice",
+
+            "details": str(e),
+
+            "raw_response": data
+        }
