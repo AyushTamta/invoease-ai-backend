@@ -1,113 +1,80 @@
 from fastapi import FastAPI, UploadFile, File
+
 import requests
+import re
 
 app = FastAPI()
 
 OCR_API_KEY = "K82584264988957"
 
 @app.get("/")
-def home():
-
-    return {
-        "message":
-        "InvoEase OCR Backend Running"
-    }
 
 @app.post("/scan-invoice")
 async def scan_invoice(
     file: UploadFile = File(...)
 ):
 
-    try:
+    image_bytes = await file.read()
 
-        image_bytes = await file.read()
+    response = requests.post(
+        "https://api.ocr.space/parse/image",
+        files={
+            "file": (
+                file.filename,
+                image_bytes,
+                file.content_type,
+            )
+        },
+        data={
+            "apikey": OCR_API_KEY,
+            "language": "eng",
+        },
+    )
 
-        response = requests.post(
-            "https://api.ocr.space/parse/image",
-            files={
-                "file": (
-                    file.filename,
-                    image_bytes,
-                    file.content_type
-                )
-            },
-            data={
-                "apikey":
-                OCR_API_KEY,
+    result = response.json()
 
-                "language":
-                "eng"
-            }
-        )
+    parsed_text = result[
+        "ParsedResults"
+    ][0]["ParsedText"]
 
-        result = response.json()
+    lines = [
+        line.strip()
+        for line in parsed_text.split("\n")
+        if line.strip()
+    ]
 
-        print(result)
+    store_name = (
+        lines[0]
+        if len(lines) > 0
+        else "Unknown"
+    )
 
-        if "ParsedResults" not in result:
+    total_amount = "0"
 
-            return {
-                "error":
-                "OCR API failed",
+    for line in lines:
 
-                "full_response":
-                result
-            }
+        if "$" in line:
+            total_amount = line
 
-        parsed_text = result[
-            "ParsedResults"
-        ][0]["ParsedText"]
+    invoice_date = "Unknown"
 
-        lines = [
-            line.strip()
-            for line in parsed_text.split("\n")
-            if line.strip()
-        ]
+    for line in lines:
 
-        store_name = (
-            lines[1]
-            if len(lines) > 1
-            else "Unknown Store"
-        )
+        if "/" in line:
+            invoice_date = line
+            break
 
-        total_amount = "Not Found"
+    category = detect_category(
+        parsed_text
+    )
 
-        for line in lines:
+    items = extract_items(lines)
 
-            if "$" in line:
-
-                total_amount = line
-                break
-
-        invoice_date = "Not Found"
-
-        for line in lines:
-
-            if "/" in line:
-
-                invoice_date = line
-                break
-
-        return {
-            "store_name":
-            store_name,
-
-            "invoice_date":
-            invoice_date,
-
-            "total_amount":
-            total_amount,
-
-            "raw_text":
-            parsed_text
-        }
-
-    except Exception as e:
-
-        return {
-            "error":
-            "OCR parsing failed",
-
-            "details":
-            str(e)
-        }
+    return {
+        "store_name": store_name,
+        "total_amount": total_amount,
+        "invoice_date": invoice_date,
+        "category": category,
+        "items": items,
+        "raw_text": parsed_text,
+    }
