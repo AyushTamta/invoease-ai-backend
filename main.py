@@ -1,7 +1,6 @@
 from fastapi import FastAPI, UploadFile, File
 import requests
 import os
-import json
 
 from dotenv import load_dotenv
 
@@ -33,7 +32,7 @@ async def scan_invoice(
         response = requests.post(
             "https://api.ocr.space/parse/image",
             files={
-                "filename": (
+                "file": (
                     file.filename,
                     image_bytes,
                     file.content_type
@@ -49,6 +48,18 @@ async def scan_invoice(
         )
 
         result = response.json()
+
+        print(result)
+
+        if "ParsedResults" not in result:
+
+            return {
+                "error":
+                "OCR API failed",
+
+                "full_response":
+                result
+            }
 
         parsed_text = result[
             "ParsedResults"
