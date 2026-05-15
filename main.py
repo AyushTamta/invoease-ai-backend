@@ -9,10 +9,18 @@ import json
 
 app = FastAPI()
 
+# -------------------------
+# API KEYS
+# -------------------------
+
 OCR_API_KEY = "K82584264988957"
 
-OPENROUTER_API_KEY = "YOUR_OPENROUTER_API_KEY"
+OPENROUTER_API_KEY = "Ysk-or-v1-3f9f4e6c4dc330fcf0d26cb8dc46c3d11d7303a5d0823567a1cd180ab7f2251a"
 
+
+# -------------------------
+# HOME
+# -------------------------
 
 @app.get("/")
 def home():
@@ -24,7 +32,7 @@ def home():
 
 
 # -------------------------
-# OCR
+# OCR FUNCTION
 # -------------------------
 
 def run_ocr(
@@ -45,6 +53,7 @@ def run_ocr(
         },
 
         data={
+
             "apikey":
             OCR_API_KEY,
 
@@ -60,6 +69,8 @@ def run_ocr(
     )
 
     result = response.json()
+
+    print(result)
 
     if (
         "ParsedResults"
@@ -82,7 +93,7 @@ def extract_invoice_with_ai(
 ):
 
     prompt = f"""
-You are an invoice AI parser.
+You are an advanced invoice AI parser.
 
 Extract invoice information from this OCR text.
 
@@ -95,6 +106,7 @@ Required fields:
 - category
 - payment_method
 - tax
+- confidence_score
 - items
 - ai_summary
 
@@ -177,6 +189,7 @@ OCR TEXT:
         print(e)
 
         return {
+
             "store_name":
             "Unknown",
 
@@ -195,6 +208,9 @@ OCR TEXT:
             "tax":
             "Unknown",
 
+            "confidence_score":
+            40,
+
             "items":
             [],
 
@@ -207,7 +223,7 @@ OCR TEXT:
 
 
 # -------------------------
-# ASK AI
+# ASK SINGLE INVOICE AI
 # -------------------------
 
 def ask_invoice_ai(
@@ -259,6 +275,8 @@ Answer naturally and professionally.
     )
 
     result = response.json()
+
+    print(result)
 
     try:
 
@@ -335,6 +353,8 @@ INVOICES:
 
     result = response.json()
 
+    print(result)
+
     try:
 
         return result[
@@ -354,7 +374,89 @@ INVOICES:
 
 
 # -------------------------
-# SCAN INVOICE
+# FINANCE CHAT
+# -------------------------
+
+def finance_chat_ai(
+    invoices,
+    question,
+):
+
+    prompt = f"""
+You are an intelligent personal finance AI assistant.
+
+You help users understand:
+- spending
+- invoices
+- merchants
+- trends
+- budgeting
+- expense patterns
+
+INVOICES:
+{json.dumps(invoices)}
+
+QUESTION:
+{question}
+
+Answer clearly and professionally.
+"""
+
+    response = requests.post(
+
+        url=
+        "https://openrouter.ai/api/v1/chat/completions",
+
+        headers={
+
+            "Authorization":
+            f"Bearer {OPENROUTER_API_KEY}",
+
+            "Content-Type":
+            "application/json",
+        },
+
+        json={
+
+            "model":
+            "mistralai/mistral-7b-instruct:free",
+
+            "messages": [
+                {
+                    "role":
+                    "user",
+
+                    "content":
+                    prompt
+                }
+            ]
+        }
+    )
+
+    result = response.json()
+
+    print(result)
+
+    try:
+
+        return result[
+            "choices"
+        ][0][
+            "message"
+        ][
+            "content"
+        ]
+
+    except:
+
+        return (
+            "Could not analyze "
+            "financial data."
+        )
+
+
+# -------------------------
+# SCAN INVOICE ROUTE
 # -------------------------
 
 @app.post("/scan-invoice")
@@ -462,6 +564,43 @@ async def financial_insights(
         return {
             "insights":
             insights
+        }
+
+    except Exception as e:
+
+        return {
+            "error":
+            str(e)
+        }
+
+
+# -------------------------
+# FINANCE CHAT ROUTE
+# -------------------------
+
+@app.post("/finance-chat")
+async def finance_chat(
+    payload: dict
+):
+
+    try:
+
+        invoices = payload[
+            "invoices"
+        ]
+
+        question = payload[
+            "question"
+        ]
+
+        answer = finance_chat_ai(
+            invoices,
+            question,
+        )
+
+        return {
+            "answer":
+            answer
         }
 
     except Exception as e:
