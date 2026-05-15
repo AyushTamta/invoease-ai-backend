@@ -5,11 +5,13 @@ from fastapi import (
 )
 
 import requests
-import re
+import json
 
 app = FastAPI()
 
 OCR_API_KEY = "K82584264988957"
+
+OPENROUTER_API_KEY = "YOUR_OPENROUTER_API_KEY"
 
 
 @app.get("/")
@@ -21,126 +23,266 @@ def home():
     }
 
 
-def detect_category(text):
+# -------------------------
+# OCR FUNCTION
+# -------------------------
 
-    text = text.lower()
-
-    if any(word in text for word in [
-        "uber",
-        "ola",
-        "metro",
-        "flight",
-    ]):
-
-        return "Travel"
-
-    if any(word in text for word in [
-        "pizza",
-        "burger",
-        "restaurant",
-        "cafe",
-        "coffee",
-    ]):
-
-        return "Food"
-
-    if any(word in text for word in [
-        "store",
-        "mart",
-        "mall",
-    ]):
-
-        return "Shopping"
-
-    return "General"
-
-
-def extract_items(lines):
-
-    items = []
-
-    for line in lines:
-
-        match = re.search(
-            r"([A-Za-z ].*?)\s+(\d+\.\d{2})",
-            line,
-        )
-
-        if match:
-
-            items.append({
-                "name":
-                match.group(1),
-
-                "price":
-                match.group(2),
-            })
-
-    return items
-
-
-def generate_ai_summary(
-    store_name,
-    category,
-    total_amount,
+def run_ocr(
+    image_bytes,
+    filename,
+    content_type,
 ):
 
-    return (
-        f"This invoice appears to be a "
-        f"{category} expense from "
-        f"{store_name} totaling "
-        f"{total_amount}."
+    response = requests.post(
+        "https://api.ocr.space/parse/image",
+
+        files={
+            "file": (
+                filename,
+                image_bytes,
+                content_type,
+            )
+        },
+
+        data={
+            "apikey":
+            OCR_API_KEY,
+
+            "language":
+            "eng",
+
+            "OCREngine":
+            "2",
+
+            "scale":
+            True,
+        }
     )
 
+    result = response.json()
 
-def answer_invoice_question(
+    if (
+        "ParsedResults"
+        not in result
+    ):
+
+        return None
+
+    return result[
+        "ParsedResults"
+    ][0]["ParsedText"]
+
+
+# -------------------------
+# AI EXTRACTION
+# -------------------------
+
+def extract_invoice_with_ai(
+    raw_text
+):
+
+    prompt = f"""
+You are an invoice AI parser.
+
+Extract invoice information from this OCR text.
+
+Return ONLY valid JSON.
+
+Required fields:
+- store_name
+- invoice_date
+- total_amount
+- category
+- payment_method
+- tax
+- items
+- ai_summary
+
+items must be array:
+[
+  {{
+    "name": "...",
+    "price": "..."
+  }}
+]
+
+OCR TEXT:
+{raw_text}
+"""
+
+    response = requests.post(
+
+        url=
+        "https://openrouter.ai/api/v1/chat/completions",
+
+        headers={
+
+            "Authorization":
+            f"Bearer {OPENROUTER_API_KEY}",
+
+            "Content-Type":
+            "application/json",
+        },
+
+        json={
+
+            "model":
+            "mistralai/mistral-7b-instruct:free",
+
+            "messages": [
+                {
+                    "role":
+                    "user",
+
+                    "content":
+                    prompt
+                }
+            ]
+        }
+    )
+
+    result = response.json()
+
+    print(result)
+
+    try:
+
+        content = result[
+            "choices"
+        ][0][
+            "message"
+        ][
+            "content"
+        ]
+
+        cleaned = (
+            content
+            .replace(
+                "```json",
+                ""
+            )
+            .replace(
+                "```",
+                ""
+            )
+            .strip()
+        )
+
+        return json.loads(
+            cleaned
+        )
+
+    except Exception as e:
+
+        print(e)
+
+        return {
+            "store_name":
+            "Unknown",
+
+            "invoice_date":
+            "Unknown",
+
+            "total_amount":
+            "Unknown",
+
+            "category":
+            "General",
+
+            "payment_method":
+            "Unknown",
+
+            "tax":
+            "Unknown",
+
+            "items":
+            [],
+
+            "ai_summary":
+            "AI could not fully parse invoice.",
+
+            "raw_text":
+            raw_text,
+        }
+
+
+# -------------------------
+# ASK AI
+# -------------------------
+
+def ask_invoice_ai(
     invoice,
     question,
 ):
 
-    q = question.lower()
+    prompt = f"""
+You are an intelligent invoice assistant.
 
-    if "items" in q:
+INVOICE:
+{json.dumps(invoice)}
 
-        names = [
-            item["name"]
-            for item in invoice["items"]
-        ]
+QUESTION:
+{question}
 
-        return (
-            "Purchased items include: "
-            + ", ".join(names)
-        )
+Answer naturally and professionally.
+"""
 
-    if "category" in q:
+    response = requests.post(
 
-        return (
-            f"This invoice belongs to "
-            f"{invoice['category']}."
-        )
+        url=
+        "https://openrouter.ai/api/v1/chat/completions",
 
-    if "payment" in q:
+        headers={
 
-        return (
-            f"Payment method appears "
-            f"to be "
-            f"{invoice['payment_method']}."
-        )
+            "Authorization":
+            f"Bearer {OPENROUTER_API_KEY}",
 
-    if "business" in q:
+            "Content-Type":
+            "application/json",
+        },
 
-        return (
-            "This may qualify as "
-            "business expense depending "
-            "on how it was used."
-        )
+        json={
 
-    return (
-        "I analyzed the invoice "
-        "but could not fully "
-        "understand the question."
+            "model":
+            "mistralai/mistral-7b-instruct:free",
+
+            "messages": [
+                {
+                    "role":
+                    "user",
+
+                    "content":
+                    prompt
+                }
+            ]
+        }
     )
 
+    result = response.json()
+
+    print(result)
+
+    try:
+
+        return result[
+            "choices"
+        ][0][
+            "message"
+        ][
+            "content"
+        ]
+
+    except:
+
+        return (
+            "AI could not answer "
+            "the question."
+        )
+
+
+# -------------------------
+# SCAN INVOICE ROUTE
+# -------------------------
 
 @app.post("/scan-invoice")
 async def scan_invoice(
@@ -151,124 +293,44 @@ async def scan_invoice(
 
         image_bytes = await file.read()
 
-        response = requests.post(
-            "https://api.ocr.space/parse/image",
-            files={
-                "file": (
-                    file.filename,
-                    image_bytes,
-                    file.content_type,
-                )
-            },
-            data={
-                "apikey":
-                OCR_API_KEY,
-
-                "language":
-                "eng"
-            }
+        raw_text = run_ocr(
+            image_bytes,
+            file.filename,
+            file.content_type,
         )
 
-        result = response.json()
-
-        if (
-            "ParsedResults"
-            not in result
-        ):
+        if not raw_text:
 
             return {
                 "error":
-                "OCR API failed",
-
-                "full_response":
-                result
+                "OCR failed"
             }
 
-        parsed_text = result[
-            "ParsedResults"
-        ][0]["ParsedText"]
-
-        lines = [
-            line.strip()
-            for line in parsed_text.split(
-                "\n"
-            )
-            if line.strip()
-        ]
-
-        store_name = (
-            lines[0]
-            if len(lines) > 0
-            else "Unknown Store"
-        )
-
-        total_amount = "0"
-
-        for line in lines:
-
-            if "$" in line:
-
-                total_amount = line
-
-        invoice_date = "Unknown"
-
-        for line in lines:
-
-            if "/" in line:
-
-                invoice_date = line
-                break
-
-        category = detect_category(
-            parsed_text
-        )
-
-        items = extract_items(
-            lines
-        )
-
-        ai_summary = (
-            generate_ai_summary(
-                store_name,
-                category,
-                total_amount,
+        ai_invoice = (
+            extract_invoice_with_ai(
+                raw_text
             )
         )
 
-        return {
+        ai_invoice[
+            "raw_text"
+        ] = raw_text
 
-            "store_name":
-            store_name,
-
-            "total_amount":
-            total_amount,
-
-            "invoice_date":
-            invoice_date,
-
-            "category":
-            category,
-
-            "payment_method":
-            "Card",
-
-            "tax":
-            "GST Included",
-
-            "items":
-            items,
-
-            "ai_summary":
-            ai_summary,
-        }
+        return ai_invoice
 
     except Exception as e:
+
+        print(e)
 
         return {
             "error":
             str(e)
         }
 
+
+# -------------------------
+# ASK AI ROUTE
+# -------------------------
 
 @app.post("/ask-ai")
 async def ask_ai(
@@ -277,15 +339,17 @@ async def ask_ai(
 
     try:
 
-        invoice = payload["invoice"]
+        invoice = payload[
+            "invoice"
+        ]
 
-        question = payload["question"]
+        question = payload[
+            "question"
+        ]
 
-        answer = (
-            answer_invoice_question(
-                invoice,
-                question,
-            )
+        answer = ask_invoice_ai(
+            invoice,
+            question,
         )
 
         return {
