@@ -24,7 +24,7 @@ def home():
 
 
 # -------------------------
-# OCR FUNCTION
+# OCR
 # -------------------------
 
 def run_ocr(
@@ -74,7 +74,7 @@ def run_ocr(
 
 
 # -------------------------
-# AI EXTRACTION
+# AI INVOICE EXTRACTION
 # -------------------------
 
 def extract_invoice_with_ai(
@@ -98,7 +98,7 @@ Required fields:
 - items
 - ai_summary
 
-items must be array:
+items format:
 [
   {{
     "name": "...",
@@ -260,8 +260,6 @@ Answer naturally and professionally.
 
     result = response.json()
 
-    print(result)
-
     try:
 
         return result[
@@ -281,7 +279,82 @@ Answer naturally and professionally.
 
 
 # -------------------------
-# SCAN INVOICE ROUTE
+# FINANCIAL INSIGHTS
+# -------------------------
+
+def generate_financial_insights(
+    invoices
+):
+
+    prompt = f"""
+You are a financial AI assistant.
+
+Analyze these invoices and provide:
+- spending patterns
+- top category
+- top merchant
+- unusual trends
+- financial insights
+
+Keep response concise and professional.
+
+INVOICES:
+{json.dumps(invoices)}
+"""
+
+    response = requests.post(
+
+        url=
+        "https://openrouter.ai/api/v1/chat/completions",
+
+        headers={
+
+            "Authorization":
+            f"Bearer {OPENROUTER_API_KEY}",
+
+            "Content-Type":
+            "application/json",
+        },
+
+        json={
+
+            "model":
+            "mistralai/mistral-7b-instruct:free",
+
+            "messages": [
+                {
+                    "role":
+                    "user",
+
+                    "content":
+                    prompt
+                }
+            ]
+        }
+    )
+
+    result = response.json()
+
+    try:
+
+        return result[
+            "choices"
+        ][0][
+            "message"
+        ][
+            "content"
+        ]
+
+    except:
+
+        return (
+            "Could not generate "
+            "financial insights."
+        )
+
+
+# -------------------------
+# SCAN INVOICE
 # -------------------------
 
 @app.post("/scan-invoice")
@@ -355,6 +428,40 @@ async def ask_ai(
         return {
             "answer":
             answer
+        }
+
+    except Exception as e:
+
+        return {
+            "error":
+            str(e)
+        }
+
+
+# -------------------------
+# FINANCIAL INSIGHTS ROUTE
+# -------------------------
+
+@app.post("/financial-insights")
+async def financial_insights(
+    payload: dict
+):
+
+    try:
+
+        invoices = payload[
+            "invoices"
+        ]
+
+        insights = (
+            generate_financial_insights(
+                invoices
+            )
+        )
+
+        return {
+            "insights":
+            insights
         }
 
     except Exception as e:
