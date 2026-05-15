@@ -6,6 +6,7 @@ from fastapi import (
 
 import requests
 import json
+import os
 
 app = FastAPI()
 
@@ -13,10 +14,15 @@ app = FastAPI()
 # API KEYS
 # -------------------------
 
-OCR_API_KEY = "K82584264988957"
 
-OPENROUTER_API_KEY = "Ysk-or-v1-3f9f4e6c4dc330fcf0d26cb8dc46c3d11d7303a5d0823567a1cd180ab7f2251a"
 
+OPENROUTER_API_KEY = os.getenv(
+    "OPENROUTER_API_KEY"
+)
+
+OCR_API_KEY = os.getenv(
+    "OCR_API_KEY"
+)
 
 # -------------------------
 # HOME
@@ -29,7 +35,6 @@ def home():
         "message":
         "InvoEase AI Backend Running"
     }
-
 
 # -------------------------
 # OCR FUNCTION
@@ -82,7 +87,6 @@ def run_ocr(
     return result[
         "ParsedResults"
     ][0]["ParsedText"]
-
 
 # -------------------------
 # AI INVOICE EXTRACTION
@@ -221,7 +225,6 @@ OCR TEXT:
             raw_text,
         }
 
-
 # -------------------------
 # ASK SINGLE INVOICE AI
 # -------------------------
@@ -294,7 +297,6 @@ Answer naturally and professionally.
             "AI could not answer "
             "the question."
         )
-
 
 # -------------------------
 # FINANCIAL INSIGHTS
@@ -372,15 +374,24 @@ INVOICES:
             "financial insights."
         )
 
-
 # -------------------------
-# FINANCE CHAT
+# FINANCE CHAT AI
 # -------------------------
 
 def finance_chat_ai(
     invoices,
     question,
+    messages,
 ):
+
+    conversation = ""
+
+    for message in messages:
+
+        conversation += (
+            f"{message['role']}: "
+            f"{message['content']}\n"
+        )
 
     prompt = f"""
 You are an intelligent personal finance AI assistant.
@@ -391,15 +402,18 @@ You help users understand:
 - merchants
 - trends
 - budgeting
-- expense patterns
+- financial behavior
+
+PREVIOUS CONVERSATION:
+{conversation}
 
 INVOICES:
 {json.dumps(invoices)}
 
-QUESTION:
+LATEST QUESTION:
 {question}
 
-Answer clearly and professionally.
+Answer naturally with context awareness.
 """
 
     response = requests.post(
@@ -454,7 +468,6 @@ Answer clearly and professionally.
             "financial data."
         )
 
-
 # -------------------------
 # SCAN INVOICE ROUTE
 # -------------------------
@@ -502,7 +515,6 @@ async def scan_invoice(
             str(e)
         }
 
-
 # -------------------------
 # ASK AI ROUTE
 # -------------------------
@@ -539,7 +551,6 @@ async def ask_ai(
             str(e)
         }
 
-
 # -------------------------
 # FINANCIAL INSIGHTS ROUTE
 # -------------------------
@@ -573,7 +584,6 @@ async def financial_insights(
             str(e)
         }
 
-
 # -------------------------
 # FINANCE CHAT ROUTE
 # -------------------------
@@ -593,9 +603,15 @@ async def finance_chat(
             "question"
         ]
 
+        messages = payload.get(
+            "messages",
+            []
+        )
+
         answer = finance_chat_ai(
             invoices,
             question,
+            messages,
         )
 
         return {
