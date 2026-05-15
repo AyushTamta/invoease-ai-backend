@@ -4,24 +4,46 @@ from fastapi import (
     File
 )
 
+from fastapi.middleware.cors import (
+    CORSMiddleware
+)
+
+from dotenv import load_dotenv
+
 import requests
-import json
+import re
 import os
+
+# -------------------------
+# LOAD ENV
+# -------------------------
+
+load_dotenv()
+
+OCR_API_KEY = os.getenv(
+    "OCR_API_KEY"
+)
+
+# -------------------------
+# FASTAPI APP
+# -------------------------
 
 app = FastAPI()
 
 # -------------------------
-# API KEYS
+# CORS
 # -------------------------
 
+app.add_middleware(
+    CORSMiddleware,
 
+    allow_origins=["*"],
 
-OPENROUTER_API_KEY = os.getenv(
-    "OPENROUTER_API_KEY"
-)
+    allow_credentials=True,
 
-OCR_API_KEY = os.getenv(
-    "OCR_API_KEY"
+    allow_methods=["*"],
+
+    allow_headers=["*"],
 )
 
 # -------------------------
@@ -37,439 +59,264 @@ def home():
     }
 
 # -------------------------
-# OCR FUNCTION
+# CATEGORY DETECTION
 # -------------------------
 
-def run_ocr(
-    image_bytes,
-    filename,
-    content_type,
-):
+def detect_category(text):
 
-    response = requests.post(
-        "https://api.ocr.space/parse/image",
+    text = text.lower()
 
-        files={
-            "file": (
-                filename,
-                image_bytes,
-                content_type,
-            )
-        },
+    if any(word in text for word in [
+        "uber",
+        "ola",
+        "metro",
+        "flight",
+        "airport",
+    ]):
 
-        data={
+        return "Travel"
 
-            "apikey":
-            OCR_API_KEY,
+    if any(word in text for word in [
+        "pizza",
+        "burger",
+        "restaurant",
+        "cafe",
+        "starbucks",
+        "coffee",
+        "food",
+    ]):
 
-            "language":
-            "eng",
+        return "Food"
 
-            "OCREngine":
-            "2",
+    if any(word in text for word in [
+        "dmart",
+        "walmart",
+        "mart",
+        "store",
+        "mall",
+    ]):
 
-            "scale":
-            True,
-        }
-    )
+        return "Shopping"
 
-    result = response.json()
+    if any(word in text for word in [
+        "medical",
+        "pharmacy",
+        "hospital",
+        "medicine",
+    ]):
 
-    print(result)
+        return "Healthcare"
 
-    if (
-        "ParsedResults"
-        not in result
-    ):
-
-        return None
-
-    return result[
-        "ParsedResults"
-    ][0]["ParsedText"]
+    return "General"
 
 # -------------------------
-# AI INVOICE EXTRACTION
+# ITEM EXTRACTION
 # -------------------------
 
-def extract_invoice_with_ai(
-    raw_text
-):
+def extract_items(lines):
 
-    prompt = f"""
-You are an advanced invoice AI parser.
+    items = []
 
-Extract invoice information from this OCR text.
+    for line in lines:
 
-Return ONLY valid JSON.
-
-Required fields:
-- store_name
-- invoice_date
-- total_amount
-- category
-- payment_method
-- tax
-- confidence_score
-- items
-- ai_summary
-
-items format:
-[
-  {{
-    "name": "...",
-    "price": "..."
-  }}
-]
-
-OCR TEXT:
-{raw_text}
-"""
-
-    response = requests.post(
-
-        url=
-        "https://openrouter.ai/api/v1/chat/completions",
-
-        headers={
-
-            "Authorization":
-            f"Bearer {OPENROUTER_API_KEY}",
-
-            "Content-Type":
-            "application/json",
-        },
-
-        json={
-
-            "model":
-            "mistralai/mistral-7b-instruct:free",
-
-            "messages": [
-                {
-                    "role":
-                    "user",
-
-                    "content":
-                    prompt
-                }
-            ]
-        }
-    )
-
-    result = response.json()
-
-    print(result)
-
-    try:
-
-        content = result[
-            "choices"
-        ][0][
-            "message"
-        ][
-            "content"
-        ]
-
-        cleaned = (
-            content
-            .replace(
-                "```json",
-                ""
-            )
-            .replace(
-                "```",
-                ""
-            )
-            .strip()
+        match = re.search(
+            r"([A-Za-z ].*?)\s+(\d+\.\d{2})",
+            line,
         )
 
-        return json.loads(
-            cleaned
-        )
+        if match:
 
-    except Exception as e:
+            item_name = (
+                match.group(1).strip()
+            )
 
-        print(e)
+            item_price = (
+                match.group(2)
+            )
 
-        return {
+            items.append({
+                "name":
+                item_name,
 
-            "store_name":
-            "Unknown",
+                "price":
+                item_price,
+            })
 
-            "invoice_date":
-            "Unknown",
-
-            "total_amount":
-            "Unknown",
-
-            "category":
-            "General",
-
-            "payment_method":
-            "Unknown",
-
-            "tax":
-            "Unknown",
-
-            "confidence_score":
-            40,
-
-            "items":
-            [],
-
-            "ai_summary":
-            "AI could not fully parse invoice.",
-
-            "raw_text":
-            raw_text,
-        }
+    return items
 
 # -------------------------
-# ASK SINGLE INVOICE AI
+# TAX EXTRACTION
 # -------------------------
 
-def ask_invoice_ai(
+def extract_tax(lines):
+
+    for line in lines:
+
+        lower = line.lower()
+
+        if (
+            "tax" in lower
+            or "gst" in lower
+            or "vat" in lower
+        ):
+
+            return line
+
+    return "Not Found"
+
+# -------------------------
+# PAYMENT METHOD
+# -------------------------
+
+def extract_payment_method(text):
+
+    text = text.lower()
+
+    if "visa" in text:
+        return "Visa Card"
+
+    if "mastercard" in text:
+        return "Mastercard"
+
+    if "upi" in text:
+        return "UPI"
+
+    if "cash" in text:
+        return "Cash"
+
+    if "credit" in text:
+        return "Credit Card"
+
+    if "debit" in text:
+        return "Debit Card"
+
+    return "Unknown"
+
+# -------------------------
+# AI SUMMARY
+# -------------------------
+
+def generate_ai_summary(
+    store_name,
+    category,
+    total_amount,
+):
+
+    return (
+        f"This invoice appears to be a "
+        f"{category} expense from "
+        f"{store_name} totaling "
+        f"{total_amount}. "
+        f"The purchase has been "
+        f"automatically analyzed and "
+        f"categorized using AI."
+    )
+
+# -------------------------
+# CONFIDENCE SCORE
+# -------------------------
+
+def calculate_confidence(
+    items,
+    total_amount,
+    invoice_date,
+):
+
+    score = 50
+
+    if len(items) > 0:
+        score += 20
+
+    if total_amount != "0":
+        score += 15
+
+    if invoice_date != "Unknown":
+        score += 15
+
+    return min(score, 100)
+
+# -------------------------
+# ASK AI ENGINE
+# -------------------------
+
+def answer_invoice_question(
     invoice,
     question,
 ):
 
-    prompt = f"""
-You are an intelligent invoice assistant.
+    q = question.lower()
 
-INVOICE:
-{json.dumps(invoice)}
+    if "what items" in q:
 
-QUESTION:
-{question}
-
-Answer naturally and professionally.
-"""
-
-    response = requests.post(
-
-        url=
-        "https://openrouter.ai/api/v1/chat/completions",
-
-        headers={
-
-            "Authorization":
-            f"Bearer {OPENROUTER_API_KEY}",
-
-            "Content-Type":
-            "application/json",
-        },
-
-        json={
-
-            "model":
-            "mistralai/mistral-7b-instruct:free",
-
-            "messages": [
-                {
-                    "role":
-                    "user",
-
-                    "content":
-                    prompt
-                }
-            ]
-        }
-    )
-
-    result = response.json()
-
-    print(result)
-
-    try:
-
-        return result[
-            "choices"
-        ][0][
-            "message"
-        ][
-            "content"
+        item_names = [
+            item["name"]
+            for item in invoice["items"]
         ]
 
-    except:
-
         return (
-            "AI could not answer "
-            "the question."
+            "Purchased items include: "
+            + ", ".join(item_names)
         )
 
-# -------------------------
-# FINANCIAL INSIGHTS
-# -------------------------
+    if "tax" in q:
 
-def generate_financial_insights(
-    invoices
-):
+        return (
+            f"The detected tax is "
+            f"{invoice['tax']}."
+        )
 
-    prompt = f"""
-You are a financial AI assistant.
+    if "category" in q:
 
-Analyze these invoices and provide:
-- spending patterns
-- top category
-- top merchant
-- unusual trends
-- financial insights
+        return (
+            f"This invoice belongs to "
+            f"the {invoice['category']} "
+            f"category."
+        )
 
-Keep response concise and professional.
+    if "payment" in q:
 
-INVOICES:
-{json.dumps(invoices)}
-"""
+        return (
+            f"The payment method appears "
+            f"to be "
+            f"{invoice['payment_method']}."
+        )
 
-    response = requests.post(
+    if "date" in q:
 
-        url=
-        "https://openrouter.ai/api/v1/chat/completions",
+        return (
+            f"The invoice date is "
+            f"{invoice['invoice_date']}."
+        )
 
-        headers={
+    if "business" in q:
 
-            "Authorization":
-            f"Bearer {OPENROUTER_API_KEY}",
-
-            "Content-Type":
-            "application/json",
-        },
-
-        json={
-
-            "model":
-            "mistralai/mistral-7b-instruct:free",
-
-            "messages": [
-                {
-                    "role":
-                    "user",
-
-                    "content":
-                    prompt
-                }
+        if (
+            invoice["category"]
+            in [
+                "Travel",
+                "Food",
             ]
-        }
+        ):
+
+            return (
+                "This may qualify as "
+                "a business expense "
+                "depending on usage."
+            )
+
+        return (
+            "This appears more like "
+            "a personal expense."
+        )
+
+    return (
+        "I analyzed the invoice, but "
+        "could not fully understand "
+        "the question."
     )
 
-    result = response.json()
-
-    print(result)
-
-    try:
-
-        return result[
-            "choices"
-        ][0][
-            "message"
-        ][
-            "content"
-        ]
-
-    except:
-
-        return (
-            "Could not generate "
-            "financial insights."
-        )
-
 # -------------------------
-# FINANCE CHAT AI
-# -------------------------
-
-def finance_chat_ai(
-    invoices,
-    question,
-    messages,
-):
-
-    conversation = ""
-
-    for message in messages:
-
-        conversation += (
-            f"{message['role']}: "
-            f"{message['content']}\n"
-        )
-
-    prompt = f"""
-You are an intelligent personal finance AI assistant.
-
-You help users understand:
-- spending
-- invoices
-- merchants
-- trends
-- budgeting
-- financial behavior
-
-PREVIOUS CONVERSATION:
-{conversation}
-
-INVOICES:
-{json.dumps(invoices)}
-
-LATEST QUESTION:
-{question}
-
-Answer naturally with context awareness.
-"""
-
-    response = requests.post(
-
-        url=
-        "https://openrouter.ai/api/v1/chat/completions",
-
-        headers={
-
-            "Authorization":
-            f"Bearer {OPENROUTER_API_KEY}",
-
-            "Content-Type":
-            "application/json",
-        },
-
-        json={
-
-            "model":
-            "mistralai/mistral-7b-instruct:free",
-
-            "messages": [
-                {
-                    "role":
-                    "user",
-
-                    "content":
-                    prompt
-                }
-            ]
-        }
-    )
-
-    result = response.json()
-
-    print(result)
-
-    try:
-
-        return result[
-            "choices"
-        ][0][
-            "message"
-        ][
-            "content"
-        ]
-
-    except:
-
-        return (
-            "Could not analyze "
-            "financial data."
-        )
-
-# -------------------------
-# SCAN INVOICE ROUTE
+# SCAN INVOICE
 # -------------------------
 
 @app.post("/scan-invoice")
@@ -481,37 +328,160 @@ async def scan_invoice(
 
         image_bytes = await file.read()
 
-        raw_text = run_ocr(
-            image_bytes,
-            file.filename,
-            file.content_type,
+        response = requests.post(
+            "https://api.ocr.space/parse/image",
+
+            files={
+                "file": (
+                    file.filename,
+                    image_bytes,
+                    file.content_type,
+                )
+            },
+
+            data={
+                "apikey":
+                OCR_API_KEY,
+
+                "language":
+                "eng",
+
+                "isTable":
+                True,
+
+                "OCREngine":
+                2,
+            }
         )
 
-        if not raw_text:
+        result = response.json()
+
+        print(result)
+
+        if (
+            "ParsedResults"
+            not in result
+        ):
 
             return {
                 "error":
-                "OCR failed"
+                "OCR API failed",
+
+                "ocr_response":
+                result
             }
 
-        ai_invoice = (
-            extract_invoice_with_ai(
-                raw_text
+        parsed_text = result[
+            "ParsedResults"
+        ][0]["ParsedText"]
+
+        lines = [
+            line.strip()
+            for line in parsed_text.split(
+                "\n"
+            )
+            if line.strip()
+        ]
+
+        store_name = (
+            lines[0]
+            if len(lines) > 0
+            else "Unknown Store"
+        )
+
+        total_amount = "0"
+
+        for line in lines:
+
+            if "$" in line:
+
+                total_amount = line
+
+        invoice_date = "Unknown"
+
+        for line in lines:
+
+            if "/" in line:
+
+                invoice_date = line
+                break
+
+        category = detect_category(
+            parsed_text
+        )
+
+        items = extract_items(
+            lines
+        )
+
+        tax = extract_tax(
+            lines
+        )
+
+        payment_method = (
+            extract_payment_method(
+                parsed_text
             )
         )
 
-        ai_invoice[
-            "raw_text"
-        ] = raw_text
+        ai_summary = (
+            generate_ai_summary(
+                store_name,
+                category,
+                total_amount,
+            )
+        )
 
-        return ai_invoice
+        confidence = (
+            calculate_confidence(
+                items,
+                total_amount,
+                invoice_date,
+            )
+        )
+
+        return {
+
+            "store_name":
+            store_name,
+
+            "total_amount":
+            total_amount,
+
+            "invoice_date":
+            invoice_date,
+
+            "category":
+            category,
+
+            "payment_method":
+            payment_method,
+
+            "tax":
+            tax,
+
+            "items":
+            items,
+
+            "confidence":
+            confidence,
+
+            "ai_summary":
+            ai_summary,
+
+            "raw_text":
+            parsed_text,
+        }
 
     except Exception as e:
 
-        print(e)
+        print(str(e))
 
         return {
             "error":
+            "Backend crashed",
+
+            "details":
             str(e)
         }
 
@@ -526,92 +496,15 @@ async def ask_ai(
 
     try:
 
-        invoice = payload[
-            "invoice"
-        ]
+        invoice = payload["invoice"]
 
-        question = payload[
-            "question"
-        ]
+        question = payload["question"]
 
-        answer = ask_invoice_ai(
-            invoice,
-            question,
-        )
-
-        return {
-            "answer":
-            answer
-        }
-
-    except Exception as e:
-
-        return {
-            "error":
-            str(e)
-        }
-
-# -------------------------
-# FINANCIAL INSIGHTS ROUTE
-# -------------------------
-
-@app.post("/financial-insights")
-async def financial_insights(
-    payload: dict
-):
-
-    try:
-
-        invoices = payload[
-            "invoices"
-        ]
-
-        insights = (
-            generate_financial_insights(
-                invoices
+        answer = (
+            answer_invoice_question(
+                invoice,
+                question,
             )
-        )
-
-        return {
-            "insights":
-            insights
-        }
-
-    except Exception as e:
-
-        return {
-            "error":
-            str(e)
-        }
-
-# -------------------------
-# FINANCE CHAT ROUTE
-# -------------------------
-
-@app.post("/finance-chat")
-async def finance_chat(
-    payload: dict
-):
-
-    try:
-
-        invoices = payload[
-            "invoices"
-        ]
-
-        question = payload[
-            "question"
-        ]
-
-        messages = payload.get(
-            "messages",
-            []
-        )
-
-        answer = finance_chat_ai(
-            invoices,
-            question,
-            messages,
         )
 
         return {
