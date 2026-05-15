@@ -9,7 +9,7 @@ import re
 
 app = FastAPI()
 
-OCR_API_KEY = K82584264988957
+OCR_API_KEY = "K82584264988957"
 
 
 @app.get("/")
